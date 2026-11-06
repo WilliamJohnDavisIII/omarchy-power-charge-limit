@@ -1,6 +1,6 @@
 # Power with charge limit
 
-A clone of [Omarchy](https://github.com/omacom/omarchy)'s power panel that adds an `80 | 100` charge limit switch next to the "Battery" title and a marker at 80% on the progress bar. Neither adds any height to the panel, and the switch has a fixed width, so nothing moves when you use it.
+A clone of [Omarchy](https://github.com/omacom/omarchy)'s power panel that adds a `Limit 80 | 100` charge limit switch next to the "Battery" title and a marker at 80% on the progress bar. Neither adds any height to the panel, and the switch has a fixed width, so nothing moves when you use it.
 
 Changes go through UPower's `EnableChargeThreshold`, so there's no root helper, sudoers rule or password prompt from the active session.
 
@@ -27,7 +27,7 @@ Measured on Asahi with UPower 1.91.5:
 - `EnableChargeThreshold true` sets sysfs to end 80, start 75. `false` sets end 100, start 100. No password was needed.
 - UPower's `ChargeEndThreshold` and `ChargeStartThreshold` stay at 80 and 75 even with the limit off or changed directly in sysfs, and `omarchy-battery-status` trusts them. So this panel reads the limit from sysfs and works out time to full itself.
 - `ChargeThresholdEnabled` can read `false` while the hardware is limiting at 80, if something other than UPower set the limit.
-- Asahi's `macsmc-battery-charge-control-end-threshold` path unit saves the limit for reboots, but it stops saving after 5 changes in 10 seconds. The switch ignores changes less than 2.5 seconds apart to stay under that.
+- Asahi's `macsmc-battery-charge-control-end-threshold` path unit saves the limit for reboots, but it stops saving after 5 changes in 10 seconds. The switch follows each click at once but only applies your final choice after about 2 seconds without a click, which stays under that.
 
 ## Not yet verified
 

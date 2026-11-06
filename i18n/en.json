@@ -1,4 +1,5 @@
 {
+  "power.limitLabel": "Limit",
   "power.chargeLimitFailed": "Couldn't change limit",
   "power.aboveChargeLimit": "Above limit, not charging",
   "power.durationMinutes": "%1m",

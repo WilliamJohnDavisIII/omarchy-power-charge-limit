@@ -31,12 +31,6 @@ test("minutesToLimit is 0 without a usable reading or at the limit", () => {
   assert.strictEqual(Model.minutesToLimit(19, 38, 19, 0), 0)
 })
 
-test("chargeLimitChangeAllowed spaces changes out", () => {
-  assert.strictEqual(Model.chargeLimitChangeAllowed(0, 1000, 2500), true)
-  assert.strictEqual(Model.chargeLimitChangeAllowed(1000, 3499, 2500), false)
-  assert.strictEqual(Model.chargeLimitChangeAllowed(1000, 3500, 2500), true)
-})
-
 test("aboveChargeLimit only applies while holding above a real limit", () => {
   assert.strictEqual(Model.aboveChargeLimit(0.9, 80, true), true)
   assert.strictEqual(Model.aboveChargeLimit(0.9, 80, false), false)

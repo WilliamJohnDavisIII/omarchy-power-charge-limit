@@ -87,10 +87,6 @@ function minutesToLimit(energy, energyFull, rate, limit) {
   return hours > 0 ? Math.round(hours * 60) : 0
 }
 
-function chargeLimitChangeAllowed(lastChange, now, cooldownMs) {
-  return !lastChange || now - lastChange >= cooldownMs
-}
-
 function batteryIcon(device, onBattery, states) {
   var d = device || {}
   if (!d.isPresent) return ""
@@ -150,7 +146,6 @@ if (typeof module !== "undefined") {
     parseChargeLimit: parseChargeLimit,
     aboveChargeLimit: aboveChargeLimit,
     minutesToLimit: minutesToLimit,
-    chargeLimitChangeAllowed: chargeLimitChangeAllowed,
     batteryIcon: batteryIcon,
     modeLabel: modeLabel,
     profileLabel: profileLabel,

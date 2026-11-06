@@ -36,10 +36,6 @@ Panel {
   property int chargeLimit: 0
   property int pendingChargeLimit: 0
   property bool chargeLimitFailed: false
-  // Asahi saves each change through a systemd unit that stops, and stops saving,
-  // after 5 starts in 10 seconds. Spacing changes out keeps it under that.
-  readonly property int chargeLimitCooldownMs: 2500
-  property real lastChargeLimitChange: 0
   readonly property int shownChargeLimit: pendingChargeLimit > 0 ? pendingChargeLimit : chargeLimit
 
   // UPower reads the limit once at startup and never notices a change, so
@@ -191,11 +187,23 @@ Panel {
   }
 
   function setChargeLimit(limit) {
-    if (chargeLimitWriteProc.running || limit === shownChargeLimit) return
-    if (!Model.chargeLimitChangeAllowed(lastChargeLimitChange, Date.now(), chargeLimitCooldownMs)) return
-    lastChargeLimitChange = Date.now()
+    if (limit === shownChargeLimit) return
     chargeLimitFailed = false
     pendingChargeLimit = limit
+    chargeLimitApplyTimer.restart()
+  }
+
+  function applyChargeLimit() {
+    if (chargeLimitWriteProc.running) {
+      chargeLimitApplyTimer.restart()
+      return
+    }
+    var limit = pendingChargeLimit
+    if (limit <= 0) return
+    if (limit === chargeLimit) {
+      pendingChargeLimit = 0
+      return
+    }
     chargeLimitWriteProc.command = ["busctl", "call", "--allow-interactive-authorization=false",
       "org.freedesktop.UPower", upowerBattery, "org.freedesktop.UPower.Device",
       "EnableChargeThreshold", "b", limit < 100 ? "true" : "false"]
@@ -309,13 +317,24 @@ Panel {
   Process {
     id: chargeLimitWriteProc
     onExited: function(exitCode) {
-      root.pendingChargeLimit = 0
+      // A click during the call is still waiting on the timer: keep showing it.
+      if (!chargeLimitApplyTimer.running) root.pendingChargeLimit = 0
       if (exitCode !== 0) {
         root.chargeLimitFailed = true
         chargeLimitErrorTimer.restart()
       }
       root.refresh()
     }
+  }
+
+  // The switch follows each click at once, and only the final choice is applied
+  // once clicking stops. Asahi saves each change through a systemd unit that
+  // stops, and stops saving, after 5 starts in 10 seconds. At least 2.1 seconds
+  // between changes keeps it under that.
+  Timer {
+    id: chargeLimitApplyTimer
+    interval: 2100
+    onTriggered: root.applyChargeLimit()
   }
 
   Timer {
@@ -486,6 +505,17 @@ Panel {
                 anchors.leftMargin: Style.space(8)
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Style.space(2)
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  rightPadding: Style.space(4)
+                  textFormat: Text.PlainText
+                  text: strings.t("power.limitLabel")
+                  color: root.bar.foreground
+                  opacity: 0.6
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
 
                 Repeater {
                   model: root.chargeLimitOptions
