@@ -1,0 +1,7 @@
+{
+  "power.chargeLimitFailed": "Couldn't change limit",
+  "power.aboveChargeLimit": "Above limit, not charging",
+  "power.durationMinutes": "%1m",
+  "power.durationHours": "%1h",
+  "power.durationHoursMinutes": "%1h %2m"
+}
