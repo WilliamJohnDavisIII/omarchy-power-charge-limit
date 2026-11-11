@@ -39,3 +39,31 @@ test("aboveChargeLimit only applies while holding above a real limit", () => {
   assert.strictEqual(Model.aboveChargeLimit(0.9, 100, true), false)
   assert.strictEqual(Model.aboveChargeLimit(0.9, 0, true), false)
 })
+
+test("chargePause flags a hold below the start threshold", () => {
+  assert.strictEqual(Model.chargePause(0.65, 75, 46, true), "hot")
+  assert.strictEqual(Model.chargePause(0.65, 75, 44, true), "hot")
+  assert.strictEqual(Model.chargePause(0.65, 75, 43.9, true), "paused")
+  assert.strictEqual(Model.chargePause(0.65, 75, NaN, true), "paused")
+  assert.strictEqual(Model.chargePause(0.5, 100, 46, true), "hot")
+})
+
+test("chargePause leaves real holds and non-holds alone", () => {
+  assert.strictEqual(Model.chargePause(0.78, 75, 46, true), "")
+  assert.strictEqual(Model.chargePause(0.75, 75, 46, true), "")
+  assert.strictEqual(Model.chargePause(0.65, 75, 46, false), "")
+  assert.strictEqual(Model.chargePause(0.65, 0, 46, true), "")
+})
+
+test("parseBatteryTemp reads tenths of a degree", () => {
+  assert.strictEqual(Model.parseBatteryTemp("460\n"), 46)
+  assert.strictEqual(Model.parseBatteryTemp("439"), 43.9)
+  assert.ok(Number.isNaN(Model.parseBatteryTemp("")))
+  assert.ok(Number.isNaN(Model.parseBatteryTemp(undefined)))
+  assert.ok(Number.isNaN(Model.parseBatteryTemp("abc")))
+})
+
+test("chargePause is always hot while the heat guard is pausing", () => {
+  assert.strictEqual(Model.chargePause(0.65, 0, 38, true, true), "hot")
+  assert.strictEqual(Model.chargePause(0.78, 75, 38, false, true), "hot")
+})

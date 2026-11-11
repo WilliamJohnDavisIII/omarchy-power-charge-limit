@@ -77,6 +77,24 @@ function aboveChargeLimit(fraction, limit, holding) {
   return !!holding && limit > 0 && limit < 100 && Math.round(fraction * 100) > limit + 1
 }
 
+// Why a hold isn't the charge limit's doing. heatGuard is true while
+// battery-heat-guard has paused charging, which is always "hot". Otherwise the
+// SMC stops charging on its own when the battery gets hot (44°C on an M1 Air,
+// per Eclectic Light) and reports it like any other hold. Below the limit's
+// start threshold the limit can't be the reason, so the hold is a pause: "hot"
+// at or above 44°C, else "paused". "" means a real hold or no hold.
+function chargePause(fraction, startLimit, tempC, holding, heatGuard) {
+  if (heatGuard) return "hot"
+  if (!holding || !(startLimit > 0) || Math.round(fraction * 100) >= startLimit) return ""
+  return Number(tempC) >= 44 ? "hot" : "paused"
+}
+
+// The battery's sysfs temp, in tenths of a degree, as °C, or NaN if unreadable.
+function parseBatteryTemp(raw) {
+  var text = String(raw === undefined || raw === null ? "" : raw).trim()
+  return /^-?\d+$/.test(text) ? Number(text) / 10 : NaN
+}
+
 // Minutes for the battery to reach the charge limit, or 0 if there's no reading
 // to work from or it is already there. Rates at or below 0.2W count as idle,
 // the same cutoff omarchy-battery-status uses.
@@ -145,6 +163,8 @@ if (typeof module !== "undefined") {
     chargeThresholdActive: chargeThresholdActive,
     parseChargeLimit: parseChargeLimit,
     aboveChargeLimit: aboveChargeLimit,
+    chargePause: chargePause,
+    parseBatteryTemp: parseBatteryTemp,
     minutesToLimit: minutesToLimit,
     batteryIcon: batteryIcon,
     modeLabel: modeLabel,

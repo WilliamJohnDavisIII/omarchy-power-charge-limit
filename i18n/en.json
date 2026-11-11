@@ -2,6 +2,11 @@
   "power.limitLabel": "Limit",
   "power.chargeLimitFailed": "Couldn't change limit",
   "power.aboveChargeLimit": "Above limit, not charging",
+  "power.tooHotToCharge": "Too hot to charge",
+  "power.chargingPaused": "Charging paused",
+  "power.tooHot": "Too hot",
+  "power.batteryTemp": "Temperature",
+  "power.paused": "Paused",
   "power.durationMinutes": "%1m",
   "power.durationHours": "%1h",
   "power.durationHoursMinutes": "%1h %2m"

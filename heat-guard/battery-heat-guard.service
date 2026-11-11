@@ -1,0 +1,11 @@
+[Unit]
+Description=Pause battery charging while the battery is hot
+After=systemd-udevd.service
+
+[Service]
+ExecStart=/usr/local/bin/battery-heat-guard
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

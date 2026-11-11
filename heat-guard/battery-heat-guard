@@ -1,0 +1,107 @@
+#!/bin/bash
+# Pauses charging while the battery is hot, and resumes once it cools.
+#
+# This Mac's firmware has no "inhibit charge" control, so a pause lowers the
+# charge limit to the current level and the resume puts the saved limit back.
+# The saved limit lives in /var/lib so a reboot or crash mid-pause can't strand
+# the battery at the lowered limit (Asahi saves every limit change for boot).
+#
+# Usage: battery-heat-guard          run the guard loop (the systemd service)
+#        battery-heat-guard selftest check the hardware takes arbitrary limits
+set -u
+
+BAT=${BAT:-/sys/class/power_supply/macsmc-battery}
+AC=${AC:-/sys/class/power_supply/macsmc-ac/online}
+STATE=${STATE:-/var/lib/battery-heat-guard}
+PAUSE_AT=${PAUSE_AT:-400}    # tenths of °C
+RESUME_AT=${RESUME_AT:-370}  # tenths of °C
+MIN_LEVEL=${MIN_LEVEL:-20}   # never hold the battery below this, hot or not
+INTERVAL=${INTERVAL:-15}     # seconds
+SANE_MIN=${SANE_MIN:-50}     # a limit below this that the guard didn't set is a glitch
+DEFAULT_LIMIT=${DEFAULT_LIMIT:-80}
+SAVED_CONF=${SAVED_CONF:-/etc/udev/macsmc-battery.conf}  # Asahi's boot-time copy
+
+limit_file=$BAT/charge_control_end_threshold
+
+set_limit() {
+  echo "$1" > "$limit_file" 2>/dev/null && [ "$(cat "$limit_file")" = "$1" ]
+}
+
+if [ "${1:-}" = selftest ]; then
+  orig=$(cat "$limit_file")
+  probe=$(( orig > 50 ? orig - 1 : orig + 1 ))
+  if set_limit "$probe"; then result="ok: limits other than 80/100 work"; else result="unsupported: the firmware rejected a limit of $probe%"; fi
+  set_limit "$orig" || { echo "could not restore the limit to $orig%"; exit 1; }
+  echo "$result"
+  [[ $result == ok* ]]
+  exit
+fi
+
+mkdir -p "$STATE"
+chmod 755 "$STATE"
+
+resume() {
+  [ -f "$STATE/saved" ] || return 0
+  local saved; saved=$(cat "$STATE/saved")
+  if set_limit "$saved"; then
+    rm -f "$STATE/saved" "$STATE/paused"
+    echo "resumed: limit back to $saved%"
+  else
+    echo "could not restore the limit to $saved%"
+  fi
+}
+
+# Keeps the last real limit (80 or 100 from the panel) and Asahi's boot copy
+# of it. Reloading macsmc_power makes the limit file vanish for a moment; UPower
+# then re-applies junk and the driver clamps it to its 10% floor, and Asahi's
+# path unit saves an empty value. Without this the Mac then sits at 10% forever.
+remember_good() {
+  [ "$1" -ge "$SANE_MIN" ] || return 0
+  [ "$(cat "$STATE/good" 2>/dev/null)" = "$1" ] || echo "$1" > "$STATE/good"
+  local line="CHARGE_CONTROL_END_THRESHOLD=$1"
+  [ "$(cat "$SAVED_CONF" 2>/dev/null)" = "$line" ] || echo "$line" > "$SAVED_CONF"
+}
+
+trap 'resume; exit 0' TERM INT
+resume  # left over from a reboot or crash mid-pause
+
+while :; do
+  temp=$(cat "$BAT/temp" 2>/dev/null); level=$(cat "$BAT/capacity" 2>/dev/null); status=$(cat "$BAT/status" 2>/dev/null)
+  limit=$(cat "$limit_file" 2>/dev/null); ac=$(cat "$AC" 2>/dev/null)
+  # The driver's files vanish while it reloads; wait for them to come back.
+  if ! [[ $temp =~ ^-?[0-9]+$ && $level =~ ^[0-9]+$ && $limit =~ ^[0-9]+$ ]]; then
+    sleep "$INTERVAL" & wait $!; continue
+  fi
+
+  [ -f "$STATE/saved" ] || remember_good "$limit"
+
+  if [ -f "$STATE/saved" ]; then
+    if [ "$limit" != "$(cat "$STATE/paused")" ]; then
+      # Someone changed the limit mid-pause (the panel's 80/100 switch):
+      # their choice wins, and the next pass re-pauses against it if needed.
+      rm -f "$STATE/saved" "$STATE/paused"
+      echo "limit changed to $limit% during a pause; dropping the pause"
+    elif [ "$ac" != 1 ] || [ "$temp" -le "$RESUME_AT" ] || [ "$level" -lt "$MIN_LEVEL" ]; then
+      resume
+    fi
+  elif [ "$limit" -lt "$SANE_MIN" ]; then
+    good=$(cat "$STATE/good" 2>/dev/null); [[ $good =~ ^[0-9]+$ ]] || good=$DEFAULT_LIMIT
+    if set_limit "$good"; then
+      remember_good "$good"
+      echo "limit was a bogus $limit%; put it back to $good%"
+    fi
+  elif [ "$ac" = 1 ] && [ "$status" = Charging ] && [ "$temp" -ge "$PAUSE_AT" ] \
+       && [ "$level" -ge "$MIN_LEVEL" ] && [ "$level" -lt "$limit" ]; then
+    echo "$limit" > "$STATE/saved"
+    if set_limit "$level"; then
+      echo "$level" > "$STATE/paused"
+      echo "paused at $level% ($((temp / 10)).$((temp % 10))°C), limit was $limit%"
+    else
+      rm -f "$STATE/saved"
+      set_limit "$limit"
+      echo "the firmware rejected a limit of $level%; heat pauses can't work on this Mac"
+      exit 0
+    fi
+  fi
+  sleep "$INTERVAL" & wait $!  # so a stop request is handled at once
+done

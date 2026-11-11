@@ -30,10 +30,20 @@ Panel {
   // off, and "disabled" for a limit it didn't set. 0 means unknown, which hides
   // the switch. pendingChargeLimit shows the choice while the call is running.
   readonly property string chargeLimitPath: "/sys/class/power_supply/macsmc-battery/charge_control_end_threshold"
+  readonly property string chargeStartPath: "/sys/class/power_supply/macsmc-battery/charge_control_start_threshold"
+  readonly property string batteryTempPath: "/sys/class/power_supply/macsmc-battery/temp"
+  readonly property string heatGuardDir: "/var/lib/battery-heat-guard"
   readonly property string upowerBattery: "/org/freedesktop/UPower/devices/battery_macsmc_battery"
   readonly property var chargeLimitOptions: [80, 100]
   readonly property int chargeLimitMarker: 80
   property int chargeLimit: 0
+  property int chargeStartLimit: 0
+  property real batteryTemp: NaN
+  // "hot", "paused" or "": see Model.chargePause.
+  // True while battery-heat-guard (heat-guard/) has lowered the limit to pause
+  // charging. chargeLimit then holds the limit it will restore, not sysfs's.
+  property bool heatGuardPaused: false
+  readonly property string chargePause: Model.chargePause(batteryFraction, chargeStartLimit, batteryTemp, chargeThresholdActive, heatGuardPaused)
   property int pendingChargeLimit: 0
   property bool chargeLimitFailed: false
   readonly property int shownChargeLimit: pendingChargeLimit > 0 ? pendingChargeLimit : chargeLimit
@@ -102,7 +112,12 @@ Panel {
     var device = UPower.displayDevice
     return !!(device && device.isPresent && UPower.onBattery)
   }
+  // The kernel's own battery status. UPower's copy goes stale whenever upower
+  // restarts (the shell keeps the old device), so a battery the kernel says is
+  // charging or discharging is never shown as held or paused.
+  property string kernelStatus: ""
   readonly property bool chargeThresholdActive: {
+    if (kernelStatus === "Charging" || kernelStatus === "Discharging") return false
     var device = UPower.displayDevice
     return Model.chargeThresholdActive(device, root.discharging, upowerStates())
   }
@@ -168,6 +183,8 @@ Panel {
   readonly property string heroStatusText: {
     if (chargeLimitFailed) return strings.t("power.chargeLimitFailed")
     if (Model.aboveChargeLimit(batteryFraction, shownChargeLimit, chargeThresholdActive)) return strings.t("power.aboveChargeLimit")
+    if (chargePause === "hot") return strings.t("power.tooHotToCharge")
+    if (chargePause === "paused") return strings.t("power.chargingPaused")
     if (fullyCharged) return Commons.I18n.t("power.fullyCharged")
     if (rotatingPhrases) return activePhrases[phraseIndex % activePhrases.length]
     return modeLabel()
@@ -304,12 +321,27 @@ Panel {
 
   Process {
     id: chargeLimitReadProc
-    command: ["cat", root.chargeLimitPath]
+    // One line each: end threshold, start threshold, temp, then the heat
+    // guard's saved and paused limits (absent unless it's pausing), then the
+    // kernel's battery status. An
+    // unreadable file prints an empty line, so the others keep their place.
+    command: ["sh", "-c", "for f; do cat \"$f\" 2>/dev/null || echo; done", "sh",
+      root.chargeLimitPath, root.chargeStartPath, root.batteryTempPath,
+      root.heatGuardDir + "/saved", root.heatGuardDir + "/paused",
+      "/sys/class/power_supply/macsmc-battery/status"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        var limit = Model.parseChargeLimit(text)
+        var lines = text.split("\n")
+        var limit = Model.parseChargeLimit(lines[0])
+        var saved = Model.parseChargeLimit(lines[3])
+        // Only trust the guard's files while sysfs still shows its pause.
+        root.heatGuardPaused = saved > 0 && limit > 0 && Model.parseChargeLimit(lines[4]) === limit
+        if (root.heatGuardPaused) limit = saved
         if (limit > 0) root.chargeLimit = limit
+        root.chargeStartLimit = root.heatGuardPaused ? 0 : Model.parseChargeLimit(lines[1])
+        root.batteryTemp = Model.parseBatteryTemp(lines[2])
+        root.kernelStatus = String(lines[5] || "").trim()
       }
     }
   }
@@ -642,6 +674,8 @@ Panel {
             spacing: Style.spacing.labelGap
             InfoPair { label: Commons.I18n.t("power.batterySize"); value: root.reading(root.batteryInfo.size) }
             InfoPair { label: Commons.I18n.t("power.chargeCycles"); value: root.reading(root.batteryInfo.cycles) || "—" }
+            // Whole degrees, so the reading doesn't flicker by tenths.
+            InfoPair { label: strings.t("power.batteryTemp"); value: isNaN(root.batteryTemp) ? "—" : root.reading(Math.round(root.batteryTemp) + "°C") }
           }
 
           Column {
@@ -655,7 +689,10 @@ Panel {
             }
             InfoPair {
               label: root.chargeThresholdActive ? Commons.I18n.t("power.batteryState") : (root.discharging ? Commons.I18n.t("power.discharging") : Commons.I18n.t("power.charging"))
-              value: root.chargeThresholdActive ? Commons.I18n.t("power.holding") : (root.batteryFull ? "-" : root.reading(root.batteryInfo.rate))
+              // Kept to a word so the column doesn't reflow.
+              value: root.chargePause === "hot" ? strings.t("power.tooHot")
+                : root.chargePause === "paused" ? strings.t("power.paused")
+                : root.chargeThresholdActive ? Commons.I18n.t("power.holding") : (root.batteryFull ? "-" : root.reading(root.batteryInfo.rate))
             }
           }
         }
