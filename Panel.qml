@@ -595,7 +595,7 @@ Panel {
           Text {
             id: heroPercent
             textFormat: Text.PlainText
-            text: root.reading(root.batteryInfo.percentage) || "—"
+            text: UPower.displayDevice && UPower.displayDevice.isPresent ? root.reading(Commons.I18n.formatNumber(Math.round(root.batteryFraction * 100)) + "%") : (root.reading(root.batteryInfo.percentage) || "—")
             color: root.bar.foreground
             font.family: root.bar.fontFamily
             font.pixelSize: Style.font.displayLarge
@@ -641,7 +641,7 @@ Panel {
             }
           }
 
-          // Marks 80% on the track: solid while the limit is on, faint at 100.
+          // Marks 80% on the track while the limit is on; fades out at 100.
           // It overhangs the track into the column's spacing, taking no height.
           Rectangle {
             visible: root.chargeLimit > 0
@@ -652,7 +652,7 @@ Panel {
             height: barTrack.height + Style.space(6)
             radius: width / 2
             color: root.bar.foreground
-            opacity: root.shownChargeLimit === root.chargeLimitMarker ? 0.9 : 0.3
+            opacity: root.shownChargeLimit === root.chargeLimitMarker ? 0.9 : 0
 
             Behavior on opacity { NumberAnimation { duration: Style.duration(180); easing.type: Easing.OutCubic } }
           }
